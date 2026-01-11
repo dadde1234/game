@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snack Dash: Healthy Rush</title>
+    <meta property="og:title" content="Snack Dash: Healthy Rush">
+    <meta property="og:description" content="Riuscirai a mangiare sano? Schiva il junk food e diventa il re degli snack!">
+    <meta property="og:image" content="https://i.imgur.com/your-game-thumbnail.png"> <style>
+        body { margin: 0; overflow: hidden; font-family: 'Press Start 2P', cursive; background: #87CEEB; user-select: none; -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; }
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap'); /* Font pixel art */
+
+        canvas { display: block; cursor: crosshair; }
+        
+        /* Interfaccia UI */
+        .overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.6); color: white; text-align: center;
+            padding: 20px; box-sizing: border-box;
+            opacity: 0; transition: opacity 0.5s ease-in-out;
+            pointer-events: none; /* Inizialmente non interattivo */
+        }
+        .overlay.active { opacity: 1; pointer-events: auto; }
+        
+        #menu h1 { 
+            font-size: clamp(30px, 8vw, 70px); 
+            text-shadow: 5px 5px #2e7d32; 
+            margin-bottom: 20px; 
+            animation: bounce 1s infinite alternate;
+        }
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-10px); }
+        }
+
+        .btn {
+            padding: 15px 40px; font-size: clamp(18px, 4vw, 24px); cursor: pointer;
+            background: #4caf50; color: white; border: none; border-radius: 50px;
+            box-shadow: 0 7px #2e7d32; transition: 0.2s; margin: 10px;
+            text-transform: uppercase;
+        }
+        .btn:hover { background: #66bb6a; transform: translateY(-3px); box-shadow: 0 10px #2e7d32; }
+        .btn:active { transform: translateY(4px); box-shadow: 0 3px #2e7d32; }
+
+        #hud {
+            position: absolute; top: 20px; left: 20px; color: white;
+            font-size: clamp(18px, 3vw, 24px); font-weight: bold; pointer-events: none;
+            text-shadow: 2px 2px 0 #000;
+            display: flex; gap: 30px;
+        }
+        #comboDisplay {
+            position: absolute; top: 80px; left: 50%; transform: translateX(-50%);
+            color: yellow; font-size: clamp(20px, 5vw, 40px); font-weight: bold;
+            text-shadow: 3px 3px 0 #d00; display: none; z-index: 100;
+        }
+
+        #powerUpBar {
+            position: absolute; top: 10px; right: 10px; width: 150px; height: 20px;
+            background: rgba(255,255,255,0.3); border-radius: 10px; overflow: hidden;
+            border: 2px solid white; display: none;
+        }
+        #powerUpFill {
+            width: 100%; height: 100%; background: linear-gradient(to right, #00BCD4, #00E5FF);
+            transition: width 0.1s linear;
+        }
+
+        #mobileControls {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 100px;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0 20px; box-sizing: border-box;
+        }
+        .mobileBtn {
+            width: 80px; height: 80px; background: rgba(0,0,0,0.4); border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            font-size: 40px; color: white; border: 2px solid white;
+            opacity: 0.8; cursor: pointer;
+            pointer-events: auto; /* Interattivo per i touch */
+        }
+        @media (min-width: 768px) { #mobileControls { display: none; } } /* Nascondi su desktop */
+        
+        #audioToggle {
+            position: absolute; top: 20px; right: 20px;
+            background: none; border: none; font-size: 30px; cursor: pointer;
+            color: white; text-shadow: 2px 2px 0 #000;
+        }
+    </style>
+</head>
+<body>
+
+    <button id="audioToggle" onclick="toggleAudio()">🔊</button>
+
+    <div id="hud">Punti: <span id="score">0</span> | Vite: <span id="lives">3</span></div>
+    <div id="comboDisplay">COMBO! x<span id="comboCount">2</span></div>
+    <div id="powerUpBar"><div id="powerUpFill"></div></div>
+
+    <div id="menu" class="overlay active">
+        <h1><span style="color:#FFF000;">SNACK</span> DASH 🍎</h1>
+        <p style="font-size: clamp(14px, 2.5vw, 18px); margin-bottom: 20px;">
+            Raccogli il cibo sano e schiva il junk food per il massimo punteggio! <br>
+            Prendi l'ACQUA 💧 per l'invincibilità e i CUORI ❤️ per una vita extra! <br>
+            Attenzione alle BOMBE 💣, sono GAME OVER istantaneo!
+        </p>
+        <button class="btn" onclick="startGame()">INIZIA LA PARTITA</button>
+    </div>
+
+    <div id="gameOver" class="overlay">
+        <h1>GAME OVER! 💀</h1>
+        <p style="font-size: clamp(16px, 3vw, 22px);">Hai mangiato troppo male...</p>
+        <h2 id="finalScoreDisplay">Punti: 0</h2>
+        <button class="btn" onclick="startGame()">GIOCA ANCORA</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="mobileControls">
+        <div class="mobileBtn" id="leftBtn">◀️</div>
+        <div class="mobileBtn" id="rightBtn">▶️</div>
+    </div>
+
+    <audio id="bgMusic" src="https://freesound.org/data/previews/203/203649_3234989-lq.mp3" loop></audio>
+    <audio id="collectSound" src="https://freesound.org/data/previews/450/450702_8898950-lq.mp3"></audio>
+    <audio id="damageSound" src="https://freesound.org/data/previews/476/476602_7811978-lq.mp3"></audio>
+    <audio id="powerUpSound" src="https://freesound.org/data/previews/162/162799_2773229-lq.mp3"></audio>
+    <audio id="gameOverSound" src="https://freesound.org/data/previews/476/476602_7811978-lq.mp3"></audio>
+
+
+<script>
+    const canvas = document.getElementById("gameCanvas");
+    const ctx = canvas.getContext("2d");
+    
+    // UI Elements
+    const menu = document.getElementById("menu");
+    const gameOverScreen = document.getElementById("gameOver");
+    const scoreEl = document.getElementById("score");
+    const livesEl = document.getElementById("lives");
+    const finalScoreDisplay = document.getElementById("finalScoreDisplay");
+    const comboDisplay = document.getElementById("comboDisplay");
+    const comboCountEl = document.getElementById("comboCount");
+    const powerUpBar = document.getElementById("powerUpBar");
+    const powerUpFill = document.getElementById("powerUpFill");
+    const audioToggleBtn = document.getElementById("audioToggle");
+
+    // Audio
+    const bgMusic = document.getElementById("bgMusic");
+    const collectSound = document.getElementById("collectSound");
+    const damageSound = document.getElementById("damageSound");
+    const powerUpSound = document.getElementById("powerUpSound");
+    const gameOverSound = document.getElementById("gameOverSound");
+    let audioEnabled = false;
+
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    let score, lives, gameActive, currentSpeed, items, powerUpActive, powerUpTimer, combo, lastCollectTime;
+    let clouds, particles;
+
+    const healthyIcons = ['🍎', '🍌', '🥕', '🍇', '🥗', '🍓', '🍊'];
+    const junkIcons = ['🍩', '🍔', '🍕', '🥤', '🍟', '🍦'];
+
+    const player = {
+        x: canvas.width / 2,
+        y: canvas.height - 120,
+        w: 80,
+        h: 80,
+        scale: 1,
+        animTimer: 0
+    };
+
+    // Mobile controls
+    const leftBtn = document.getElementById('leftBtn');
+    const rightBtn = document.getElementById('rightBtn');
+    let moveLeft = false;
+    let moveRight = false;
+
+    leftBtn.addEventListener('touchstart', () => moveLeft = true);
+    leftBtn.addEventListener('touchend', () => moveLeft = false);
+    rightBtn.addEventListener('touchstart', () => moveRight = true);
+    rightBtn.addEventListener('touchend', () => moveRight = false);
+
+    // Gestione Input Desktop
+    window.addEventListener("mousemove", (e) => { 
+        if (gameActive) player.x = e.clientX - player.w/2; 
+    });
+    window.addEventListener("touchmove", (e) => { 
+        if (gameActive) player.x = e.touches[0].clientX - player.w/2; 
+    });
+
+    function init() {
+        score = 0;
+        lives = 3;
+        currentSpeed = 5;
+        gameActive = true;
+        items = [];
+        powerUpActive = false;
+        powerUpTimer = 0;
+        combo = 0;
+        lastCollectTime = 0;
+        clouds = [];
+        particles = [];
+
+        // Genera nuvole iniziali
+        for (let i = 0; i < 5; i++) {
+            clouds.push({
+                x: Math.random() * canvas.width, 
+                y: Math.random() * (canvas.height / 3), 
+                s: 0.5 + Math.random() * 0.5,
+                opacity: 0.5 + Math.random() * 0.5
+            });
+        }
+        
+        scoreEl.innerText = score;
+        livesEl.innerText = lives;
+        powerUpBar.style.display = 'none';
+        comboDisplay.style.display = 'none';
+        player.scale = 1;
+        player.animTimer = 0;
+    }
+
+    function toggleAudio() {
+        audioEnabled = !audioEnabled;
+        audioToggleBtn.innerText = audioEnabled ? '🔊' : '🔇';
+        if (audioEnabled && gameActive) {
+            bgMusic.play();
+        } else {
+            bgMusic.pause();
+        }
+    }
+
+    function playSound(sound) {
+        if (audioEnabled) {
+            sound.currentTime = 0;
+            sound.play();
+        }
+    }
+
+    function startGame() {
+        init();
+        menu.classList.remove("active");
+        gameOverScreen.classList.remove("active");
+        
+        if (audioEnabled) {
+            bgMusic.play();
+        }
+        spawnLoop();
+        update();
+    }
+
+    function spawnLoop() {
+        if (!gameActive) return;
+        
+        let rand = Math.random();
+        let type, isHealthy, isPowerUp = false, isBomb = false, isHeart = false;
+
+        // Logica di spawn più ricca
+        if (rand < 0.03) { // 3% Power-up Acqua
+            type = '💧'; isHealthy = true; isPowerUp = true;
+        } else if (rand < 0.06 && lives < 3) { // 3% Cuore (se non hai max vite)
+            type = '❤️'; isHealthy = true; isHeart = true;
+        } else if (rand < 0.1) { // 4% Bomba (per aumentare la difficoltà)
+            type = '💣'; isHealthy = false; isBomb = true;
+        } else if (rand < 0.75) { // 65% Sano
+            type = healthyIcons[Math.floor(Math.random() * healthyIcons.length)]; isHealthy = true;
+        } else { // 25% Junk
+            type = junkIcons[Math.floor(Math.random() * junkIcons.length)]; isHealthy = false;
+        }
+
+        items.push({
+            x: Math.random() * (canvas.width - 80) + 40,
+            y: -60,
+            type: type,
+            isHealthy: isHealthy,
+            isPowerUp: isPowerUp,
+            isBomb: isBomb,
+            isHeart: isHeart,
+            speed: currentSpeed + (score / 200) + Math.random() * 2, // Velocità aumenta con lo score
+            rotation: 0,
+            rotationSpeed: Math.random() * 0.1 - 0.05 // Rotazione casuale
+        });
+
+        // La frequenza di spawn aumenta con il punteggio
+        setTimeout(spawnLoop, Math.max(300, 1000 - (score * 2))); 
+    }
+
+    function createParticle(x, y, color) {
+        particles.push({
+            x: x, y: y,
+            vx: (Math.random() - 0.5) * 5,
+            vy: (Math.random() - 0.5) * 5,
+            life: 30,
+            color: color
+        });
+    }
+
+    function update() {
+        if (!gameActive) {
+            // Se il gioco è inattivo, aggiorno solo l'animazione del menu se è visibile
+            if (menu.classList.contains("active")) {
+                 requestAnimationFrame(update);
+            }
+            return;
+        }
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Mobile Controls movement
+        if (moveLeft) player.x -= currentSpeed + 3;
+        if (moveRight) player.x += currentSpeed + 3;
+        player.x = Math.max(0, Math.min(canvas.width - player.w, player.x));
+
+
+        // Background Cielo
+        ctx.fillStyle = "#87CEEB";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Nuvole
+        ctx.font = "80px Arial";
+        clouds.forEach(c => {
+            ctx.globalAlpha = c.opacity;
+            ctx.fillText("☁️", c.x, c.y);
+            c.x += c.s;
+            if (c.x > canvas.width) c.x = -150;
+        });
+        ctx.globalAlpha = 1;
+
+        // Prato
+        ctx.fillStyle = "#4caf50";
+        ctx.fillRect(0, canvas.height - 80, canvas.width, 80);
+
+        // Player (Cestino)
+        ctx.save();
+        ctx.translate(player.x + player.w/2, player.y + player.h/2);
+        ctx.scale(player.scale, player.scale);
+        ctx.font = "80px Arial";
+        if (powerUpActive) {
+            ctx.shadowBlur = 20;
+            ctx.shadowColor = "cyan";
+        }
+        ctx.fillText("🧺", -player.w/2, -player.h/2 + 60);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+
+        // Animazione player
+        if (player.animTimer > 0) {
+            player.animTimer--;
+            player.scale = 1 + Math.sin(player.animTimer * 0.5) * 0.1; // Effetto pump
+        } else {
+            player.scale = 1;
+        }
+
+        // Items
+        for (let i = items.length - 1; i >= 0; i--) {
+            let it = items[i];
+            it.y += it.speed;
+            it.rotation += it.rotationSpeed;
+
+            ctx.save();
+            ctx.translate(it.x + 25, it.y + 25); // Centro dell'emoji
+            ctx.rotate(it.rotation);
+            ctx.font = "50px Arial";
+            ctx.fillText(it.type, -25, -25);
+            ctx.restore();
+
+            // Collisione
+            if (it.y + 30 > player.y && it.y < player.y + player.h && 
+                it.x > player.x - 20 && it.x < player.x + player.w) {
+                
+                if (it.isPowerUp) {
+                    activatePowerUp();
+                    playSound(powerUpSound);
+                } else if (it.isHeart) {
+                    lives = Math.min(3, lives + 1); // Max 3 vite
+                    livesEl.innerText = lives;
+                    playSound(collectSound);
+                } else if (it.isBomb) {
+                    playSound(gameOverSound);
+                    createParticle(it.x + 25, it.y + 25, 'red');
+                    endGame();
+                    items.splice(i, 1);
+                    continue;
+                } else if (it.isHealthy) {
+                    score += 10;
+                    scoreEl.innerText = score;
+                    player.animTimer = 10; // Attiva animazione
+                    playSound(collectSound);
+                    createParticle(it.x + 25, it.y + 25, 'lime');
+
+                    // Combo System
+                    const currentTime = Date.now();
+                    if (currentTime - lastCollectTime < 500 && !powerUpActive) { // Meno di 0.5s tra le raccolte
+                        combo++;
+                        if (combo > 1) {
+                            score += combo * 5; // Bonus punti combo
+                            comboCountEl.innerText = combo;
+                            comboDisplay.style.display = 'block';
+                            comboDisplay.style.transform = `translateX(-50%) scale(${1 + combo * 0.1})`;
+                            clearTimeout(comboDisplay.timer);
+                            comboDisplay.timer = setTimeout(() => {
+                                comboDisplay.style.display = 'none';
+                                comboDisplay.style.transform = `translateX(-50%) scale(1)`;
+                            }, 1000);
+                        }
+                    } else {
+                        combo = 1;
+                        comboDisplay.style.display = 'none';
+                    }
+                    lastCollectTime = currentTime;
+
+                } else if (!powerUpActive) { // Junk food senza power-up
+                    lives--;
+                    livesEl.innerText = lives;
+                    player.animTimer = 10;
+                    playSound(damageSound);
+                    createParticle(it.x + 25, it.y + 25, 'orange');
+                    if (lives <= 0) endGame();
+                }
+                items.splice(i, 1);
+                continue;
+            }
+
+            if (it.y > canvas.height) items.splice(i, 1);
+        }
+
+        // Gestione Power-up
+        if (powerUpActive) {
+            powerUpTimer--;
+            powerUpBar.style.display = 'block';
+            powerUpFill.style.width = (powerUpTimer / 300 * 100) + '%'; // 300 frame = 5s
+            if (powerUpTimer <= 0) {
+                powerUpActive = false;
+                powerUpBar.style.display = 'none';
+            }
+        }
+
+        // Particelle
+        for (let i = particles.length - 1; i >= 0; i--) {
+            let p = particles[i];
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+            ctx.fillStyle = p.color;
+            ctx.globalAlpha = p.life / 30;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fill();
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+        ctx.globalAlpha = 1;
+
+        requestAnimationFrame(update);
+    }
+
+    function activatePowerUp() {
+        powerUpActive = true;
+        powerUpTimer = 300; // 5 secondi a 60fps
+    }
+
+    function endGame() {
+        gameActive = false;
+        gameOverScreen.classList.add("active");
+        finalScoreDisplay.innerText = "Punti Totali: " + score;
+        bgMusic.pause();
+        bgMusic.currentTime = 0;
+        playSound(gameOverSound);
+        // Clear all pending timeouts for item spawns to prevent bugs
+        let id = window.setTimeout(function() {}, 0);
+        while (id--) {
+            window.clearTimeout(id); // will do nothing if no timeout with that id
+        }
+    }
+
+    // Inizializza il gioco al caricamento
+    init();
+    // La funzione update deve essere chiamata una volta per animare il menu
+    requestAnimationFrame(update);
+</script>
+</body>
+</html>
